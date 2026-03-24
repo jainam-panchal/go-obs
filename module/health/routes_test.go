@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,7 @@ import (
 func TestRegisterRoutesHealthzReadyz(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	RegisterRoutes(r, Check{Name: "ok", Fn: func() error { return nil }})
+	RegisterRoutes(r, Check{Name: "ok", FnCtx: func(ctx context.Context) error { return nil }})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -31,9 +32,7 @@ func TestRegisterRoutesHealthzReadyz(t *testing.T) {
 func TestRegisterRoutesReadyzFailureAndTimeout(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	RegisterRoutes(r,
-		Check{Name: "bad", Fn: func() error { return errors.New("boom") }},
-	)
+	RegisterRoutes(r, Check{Name: "bad", FnCtx: func(ctx context.Context) error { return errors.New("boom") }})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
@@ -42,7 +41,14 @@ func TestRegisterRoutesReadyzFailureAndTimeout(t *testing.T) {
 	}
 
 	r2 := gin.New()
-	RegisterRoutes(r2, Check{Name: "slow", Fn: func() error { time.Sleep(3 * time.Second); return nil }})
+	RegisterRoutes(r2, Check{Name: "slow", FnCtx: func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
+			return nil
+		}
+	}})
 	w = httptest.NewRecorder()
 	r2.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusServiceUnavailable {

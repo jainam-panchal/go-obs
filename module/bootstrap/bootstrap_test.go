@@ -32,3 +32,51 @@ func TestInitAndShutdown(t *testing.T) {
 		t.Fatalf("Shutdown() error = %v", err)
 	}
 }
+
+func TestInitMarksDegradedForUnsupportedProtocol(t *testing.T) {
+	cfg := config.Config{
+		ServiceName:          "svc-a",
+		ServiceVersion:       "1.0.0",
+		DeploymentEnv:        "dev",
+		OTLPExporterEndpoint: "http://otel-collector:4318",
+		OTLPExporterProtocol: "http/protobuf",
+	}
+
+	rt, err := Init(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if !rt.TelemetryDegraded {
+		t.Fatal("expected telemetry degraded for unsupported protocol")
+	}
+	if rt.TelemetryError == nil {
+		t.Fatal("expected telemetry degradation error")
+	}
+}
+
+func TestBuildSamplerConfig(t *testing.T) {
+	cases := []struct {
+		name      string
+		sampler   string
+		arg       string
+		wantError bool
+	}{
+		{name: "default", sampler: "", arg: "", wantError: false},
+		{name: "always_on", sampler: "always_on", arg: "", wantError: false},
+		{name: "ratio", sampler: "traceidratio", arg: "0.2", wantError: false},
+		{name: "invalid_ratio", sampler: "traceidratio", arg: "2.0", wantError: true},
+		{name: "invalid_sampler", sampler: "foo", arg: "", wantError: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := buildSampler(tc.sampler, tc.arg)
+			if tc.wantError && err == nil {
+				t.Fatal("expected error")
+			}
+			if !tc.wantError && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

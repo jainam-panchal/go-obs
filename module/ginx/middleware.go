@@ -73,7 +73,7 @@ func Middleware(rt *bootstrap.Runtime) gin.HandlerFunc {
 
 		route := c.FullPath()
 		if route == "" {
-			route = c.Request.URL.Path
+			route = "_unmatched"
 		}
 		status := c.Writer.Status()
 		statusClass := fmt.Sprintf("%dxx", status/100)

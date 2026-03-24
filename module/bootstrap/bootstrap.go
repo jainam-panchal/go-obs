@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,23 +81,12 @@ func (rt *Runtime) MarkTelemetryDegraded(err error) {
 }
 
 func initTracing(ctx context.Context, cfg Config) (*sdktrace.TracerProvider, error) {
-	endpoint := normalizeOTLPEndpoint(cfg.OTLPExporterEndpoint)
-	if endpoint == "" {
-		return nil, nil
-	}
-
-	exporterCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	exporter, err := otlptracegrpc.New(exporterCtx,
-		otlptracegrpc.WithEndpoint(endpoint),
-		otlptracegrpc.WithInsecure(),
-	)
+	sampler, err := buildSampler(cfg.OTELTracesSampler, cfg.OTELTracesSamplerArg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid sampler config: %w", err)
 	}
 
-	res, _ := resource.Merge(
+	resourceAttrs, _ := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
@@ -106,9 +96,39 @@ func initTracing(ctx context.Context, cfg Config) (*sdktrace.TracerProvider, err
 		),
 	)
 
+	endpoint := normalizeOTLPEndpoint(cfg.OTLPExporterEndpoint)
+	if endpoint == "" {
+		return sdktrace.NewTracerProvider(
+			sdktrace.WithSampler(sampler),
+			sdktrace.WithResource(resourceAttrs),
+		), nil
+	}
+
+	protocol := strings.ToLower(strings.TrimSpace(cfg.OTLPExporterProtocol))
+	if protocol == "" {
+		protocol = "grpc"
+	}
+	if protocol != "grpc" {
+		return nil, fmt.Errorf("unsupported OTLP protocol %q; supported protocol: grpc", protocol)
+	}
+
+	exporterCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	exporterOpts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(endpoint)}
+	if shouldUseInsecureTransport(cfg.OTLPExporterEndpoint) {
+		exporterOpts = append(exporterOpts, otlptracegrpc.WithInsecure())
+	}
+
+	exporter, err := otlptracegrpc.New(exporterCtx, exporterOpts...)
+	if err != nil {
+		return nil, err
+	}
+
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(res),
+		sdktrace.WithResource(resourceAttrs),
+		sdktrace.WithSampler(sampler),
 	)
 
 	return tp, nil
@@ -122,4 +142,44 @@ func normalizeOTLPEndpoint(raw string) string {
 		return u.Host
 	}
 	return raw
+}
+
+func shouldUseInsecureTransport(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme == "" {
+		return true
+	}
+	return strings.EqualFold(u.Scheme, "http")
+}
+
+func buildSampler(name, arg string) (sdktrace.Sampler, error) {
+	samplerName := strings.ToLower(strings.TrimSpace(name))
+	if samplerName == "" {
+		samplerName = "parentbased_traceidratio"
+	}
+
+	ratio := 1.0
+	if strings.TrimSpace(arg) != "" {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(arg), 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse sampler arg %q: %w", arg, err)
+		}
+		if parsed < 0 || parsed > 1 {
+			return nil, fmt.Errorf("sampler arg out of range [0,1]: %v", parsed)
+		}
+		ratio = parsed
+	}
+
+	switch samplerName {
+	case "always_on":
+		return sdktrace.AlwaysSample(), nil
+	case "always_off":
+		return sdktrace.NeverSample(), nil
+	case "traceidratio":
+		return sdktrace.TraceIDRatioBased(ratio), nil
+	case "parentbased_traceidratio":
+		return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio)), nil
+	default:
+		return nil, fmt.Errorf("unsupported sampler %q", samplerName)
+	}
 }

@@ -27,7 +27,7 @@ var (
 	jobDuration        *prometheus.HistogramVec
 )
 
-// AsynqMiddleware instruments job lifecycle with metrics, logs, and a root span.
+// AsynqMiddleware instruments job lifecycle with metrics, logs, and trace correlation.
 func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 	initWorkerMetrics()
 
@@ -46,7 +46,7 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 
 	return func(next asynq.Handler) asynq.Handler {
 		return asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
-			start := time.Now()
+			startedAt := time.Now()
 			queue, ok := asynq.GetQueueName(ctx)
 			if !ok || queue == "" {
 				queue = "default"
@@ -56,19 +56,31 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 				retryCount = 0
 			}
 			attempt := retryCount + 1
+			maxRetry, hasMaxRetry := asynq.GetMaxRetry(ctx)
 			jobID, ok := asynq.GetTaskID(ctx)
 			if !ok || jobID == "" {
 				jobID = uuid.NewString()
 			}
+			jobExecutionID := uuid.NewString()
 
 			payload := parsePayload(task.Payload())
-			traceID := payload.TraceID
+			spanStartCtx := context.Background()
+			if sc, ok := remoteSpanContextFromTraceID(payload.TraceID); ok {
+				spanStartCtx = trace.ContextWithRemoteSpanContext(spanStartCtx, sc)
+			}
+
+			spanCtx, span := tracer.Start(spanStartCtx, "asynq "+task.Type())
+			traceID := ""
+			if sc := trace.SpanContextFromContext(spanCtx); sc.IsValid() {
+				traceID = sc.TraceID().String()
+			}
+			if traceID == "" && payload.TraceID != "" {
+				traceID = payload.TraceID
+			}
 			if traceID == "" {
 				traceID = strings.ReplaceAll(uuid.NewString(), "-", "")
 			}
 
-			spanCtx, span := tracer.Start(context.Background(), "asynq "+task.Type(), trace.WithNewRoot())
-			defer span.End()
 			jobsStartedTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
 			logJSON(map[string]any{
 				"timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
@@ -76,7 +88,7 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 				"msg":              "job_started",
 				"service":          service,
 				"env":              env,
-				"job_execution_id": uuid.NewString(),
+				"job_execution_id": jobExecutionID,
 				"asynq_job_id":     jobID,
 				"task_type":        task.Type(),
 				"queue":            queue,
@@ -91,7 +103,9 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 			if err != nil {
 				result = "error"
 				jobsFailedTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
-				jobsRetriedTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
+				if hasMaxRetry && retryCount < maxRetry {
+					jobsRetriedTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
+				}
 				span.SetStatus(codes.Error, err.Error())
 				logJSON(map[string]any{
 					"timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
@@ -99,6 +113,7 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 					"msg":              "job_failed",
 					"service":          service,
 					"env":              env,
+					"job_execution_id": jobExecutionID,
 					"asynq_job_id":     jobID,
 					"task_type":        task.Type(),
 					"queue":            queue,
@@ -107,19 +122,16 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 					"trigger_source":   payload.TriggerSource,
 					"trace_id":         traceID,
 					"error":            err.Error(),
-					"job_execution_id": uuid.NewString(),
 				})
 			} else {
 				jobsSucceededTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
-				if sc := trace.SpanContextFromContext(spanCtx); sc.IsValid() {
-					traceID = sc.TraceID().String()
-				}
 				logJSON(map[string]any{
 					"timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
 					"level":            "info",
 					"msg":              "job_succeeded",
 					"service":          service,
 					"env":              env,
+					"job_execution_id": jobExecutionID,
 					"asynq_job_id":     jobID,
 					"task_type":        task.Type(),
 					"queue":            queue,
@@ -127,11 +139,11 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 					"tenant_id":        payload.TenantID,
 					"trigger_source":   payload.TriggerSource,
 					"trace_id":         traceID,
-					"job_execution_id": uuid.NewString(),
 				})
 			}
 
-			jobDuration.WithLabelValues(service, env, queue, task.Type(), result).Observe(time.Since(start).Seconds())
+			jobDuration.WithLabelValues(service, env, queue, task.Type(), result).Observe(time.Since(startedAt).Seconds())
+			span.End()
 			return err
 		})
 	}
@@ -150,6 +162,21 @@ func parsePayload(raw []byte) payloadFields {
 		p.TriggerSource = "worker"
 	}
 	return p
+}
+
+func remoteSpanContextFromTraceID(traceID string) (trace.SpanContext, bool) {
+	tid, err := trace.TraceIDFromHex(strings.TrimSpace(traceID))
+	if err != nil {
+		return trace.SpanContext{}, false
+	}
+	if !tid.IsValid() {
+		return trace.SpanContext{}, false
+	}
+	return trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	}), true
 }
 
 func initWorkerMetrics() {
