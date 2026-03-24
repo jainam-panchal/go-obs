@@ -39,6 +39,12 @@ services:
       - "${TEMPO_PORT:-13200}:3200"
       - "${TEMPO_OTLP_GRPC_PORT:-14319}:4317"
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+
   grafana:
     image: grafana/grafana:11.1.4
     environment:

@@ -16,4 +16,4 @@ lint:
 	@./scripts/validate-dashboards.sh
 
 smoke:
-	@echo "[D0] Smoke tests are not wired yet. Planned in D4 (example integration)."
+	@./scripts/smoke-example.sh

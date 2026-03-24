@@ -7,3 +7,4 @@ Validation, linting, and local bootstrap scripts.
 - `platform-health.sh`: checks local stack health endpoints with retries.
 - `validate-alerts.sh`: checks required alert labels/fields are present.
 - `validate-dashboards.sh`: checks dashboard/datasource provisioning files.
+- `smoke-example.sh`: runs D4 example integration smoke checks.
