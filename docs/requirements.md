@@ -125,6 +125,9 @@ The following documents are mandatory and must stay current:
 4. `docs/runbooks/*.md`
 5. `docs/releases/*.md`
 6. `docs/migration/*.md`
+7. `docs/deployment/*.md`
+8. `docs/integration/*.md`
+9. `docs/developer/*.md`
 
 ## 9. CI Enforcement Baseline (2026-03-24)
 CI workflows must enforce the following:

@@ -192,3 +192,8 @@ The following baseline is implemented in this repository:
    3. `validate-dashboards.sh`
    4. `platform-health.sh`
    5. `smoke-example.sh`
+
+## 12. Operational Guides
+1. Deployment guide: `docs/deployment/guide.md`
+2. Integration guide: `docs/integration/guide.md`
+3. Developer understanding guide: `docs/developer/understanding.md`
