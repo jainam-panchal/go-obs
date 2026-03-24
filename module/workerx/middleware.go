@@ -301,6 +301,10 @@ func mustRegisterGaugeVec(name, help string, labels []string) *prometheus.GaugeV
 }
 
 func logJSON(fields map[string]any) {
-	b, _ := json.Marshal(fields)
+	b, err := json.Marshal(fields)
+	if err != nil {
+		log.Printf("{\"level\":\"error\",\"msg\":\"log_marshal_failed\",\"component\":\"workerx\",\"error\":%q}", err.Error())
+		return
+	}
 	log.Println(string(b))
 }

@@ -11,6 +11,7 @@ import (
 )
 
 const defaultReadinessTimeout = 2 * time.Second
+const legacyCheckStaleWindow = 30 * time.Second
 
 var errLegacyCheckRunning = errors.New("legacy readiness check still running; migrate to FnCtx for cancellation")
 
@@ -68,14 +69,22 @@ func RegisterRoutes(router gin.IRouter, checks ...Check) {
 type legacyCheckRunner struct {
 	fn func() error
 
-	mu      sync.Mutex
-	running bool
-	done    chan error
+	mu              sync.Mutex
+	running         bool
+	done            chan error
+	hasLastResult   bool
+	lastErr         error
+	lastCompletedAt time.Time
 }
 
 func (r *legacyCheckRunner) Run(timeout time.Duration) error {
 	r.mu.Lock()
 	if r.running {
+		if r.hasLastResult && time.Since(r.lastCompletedAt) <= legacyCheckStaleWindow {
+			lastErr := r.lastErr
+			r.mu.Unlock()
+			return lastErr
+		}
 		done := r.done
 		r.mu.Unlock()
 		select {
@@ -83,6 +92,9 @@ func (r *legacyCheckRunner) Run(timeout time.Duration) error {
 			r.mu.Lock()
 			r.running = false
 			r.done = nil
+			r.hasLastResult = true
+			r.lastErr = err
+			r.lastCompletedAt = time.Now()
 			r.mu.Unlock()
 			return err
 		default:
@@ -103,6 +115,9 @@ func (r *legacyCheckRunner) Run(timeout time.Duration) error {
 		r.mu.Lock()
 		r.running = false
 		r.done = nil
+		r.hasLastResult = true
+		r.lastErr = err
+		r.lastCompletedAt = time.Now()
 		r.mu.Unlock()
 		return err
 	case <-time.After(timeout):
