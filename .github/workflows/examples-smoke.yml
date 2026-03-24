@@ -1,0 +1,22 @@
+name: Examples Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'examples/**'
+      - 'module/**'
+      - 'platform/**'
+      - 'scripts/smoke-example.sh'
+      - 'Makefile'
+      - '.github/workflows/examples-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Smoke test
+        run: make smoke

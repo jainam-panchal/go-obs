@@ -1,0 +1,25 @@
+name: Policy CI
+
+on:
+  pull_request:
+
+jobs:
+  docs-first:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Docs-first policy
+        run: |
+          ./scripts/check-docs-first.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+
+  split-ready-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Boundary checks
+        run: ./scripts/check-boundaries.sh
