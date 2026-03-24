@@ -11,6 +11,7 @@ import (
 	"github.com/peralta/go-observability-kit/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -108,19 +109,27 @@ func initTracing(ctx context.Context, cfg Config) (*sdktrace.TracerProvider, err
 	if protocol == "" {
 		protocol = "grpc"
 	}
-	if protocol != "grpc" {
-		return nil, fmt.Errorf("unsupported OTLP protocol %q; supported protocol: grpc", protocol)
-	}
 
 	exporterCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	exporterOpts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(endpoint)}
-	if shouldUseInsecureTransport(cfg.OTLPExporterEndpoint) {
-		exporterOpts = append(exporterOpts, otlptracegrpc.WithInsecure())
+	var exporter sdktrace.SpanExporter
+	switch protocol {
+	case "grpc":
+		exporterOpts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(endpoint)}
+		if shouldUseInsecureTransport(cfg.OTLPExporterEndpoint) {
+			exporterOpts = append(exporterOpts, otlptracegrpc.WithInsecure())
+		}
+		exporter, err = otlptracegrpc.New(exporterCtx, exporterOpts...)
+	case "http/protobuf", "http":
+		exporterOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(endpoint)}
+		if shouldUseInsecureTransport(cfg.OTLPExporterEndpoint) {
+			exporterOpts = append(exporterOpts, otlptracehttp.WithInsecure())
+		}
+		exporter, err = otlptracehttp.New(exporterCtx, exporterOpts...)
+	default:
+		return nil, fmt.Errorf("unsupported OTLP protocol %q; supported: grpc,http/protobuf", protocol)
 	}
-
-	exporter, err := otlptracegrpc.New(exporterCtx, exporterOpts...)
 	if err != nil {
 		return nil, err
 	}

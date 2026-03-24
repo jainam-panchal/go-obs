@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,12 +22,19 @@ type Check struct {
 
 // RegisterRoutes registers liveness and readiness routes.
 func RegisterRoutes(router gin.IRouter, checks ...Check) {
+	legacyChecks := make([]*legacyCheckRunner, len(checks))
+	for i, chk := range checks {
+		if chk.Fn != nil {
+			legacyChecks[i] = &legacyCheckRunner{fn: chk.Fn}
+		}
+	}
+
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
 	router.GET("/readyz", func(c *gin.Context) {
-		for _, chk := range checks {
+		for i, chk := range checks {
 			if chk.Fn == nil && chk.FnCtx == nil {
 				continue
 			}
@@ -42,8 +50,9 @@ func RegisterRoutes(router gin.IRouter, checks ...Check) {
 				continue
 			}
 
-			// Legacy checks cannot be canceled; run directly to avoid goroutine leaks.
-			if err := chk.Fn(); err != nil {
+			// Legacy checks have no cancellation. We cap request wait time and keep only one
+			// concurrent execution per check to avoid per-request goroutine accumulation.
+			if err := legacyChecks[i].Run(defaultReadinessTimeout); err != nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "check": chk.Name, "error": err.Error()})
 				return
 			}
@@ -51,4 +60,37 @@ func RegisterRoutes(router gin.IRouter, checks ...Check) {
 
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
+}
+
+type legacyCheckRunner struct {
+	fn func() error
+
+	mu      sync.Mutex
+	running bool
+	done    chan error
+}
+
+func (r *legacyCheckRunner) Run(timeout time.Duration) error {
+	r.mu.Lock()
+	if !r.running {
+		r.running = true
+		r.done = make(chan error, 1)
+		done := r.done
+		go func() {
+			done <- r.fn()
+		}()
+	}
+	done := r.done
+	r.mu.Unlock()
+
+	select {
+	case err := <-done:
+		r.mu.Lock()
+		r.running = false
+		r.done = nil
+		r.mu.Unlock()
+		return err
+	case <-time.After(timeout):
+		return context.DeadlineExceeded
+	}
 }

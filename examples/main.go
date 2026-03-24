@@ -56,52 +56,6 @@ var (
 		Name: "http_server_inflight_requests",
 		Help: "In-flight HTTP requests",
 	}, []string{"service", "env"})
-
-	jobsEnqueuedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "asynq_jobs_enqueued_total",
-		Help: "Total enqueued jobs",
-	}, []string{"service", "env", "queue", "task_type"})
-
-	jobsStartedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "asynq_jobs_started_total",
-		Help: "Total started jobs",
-	}, []string{"service", "env", "queue", "task_type"})
-
-	jobsSucceededTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "asynq_jobs_succeeded_total",
-		Help: "Total succeeded jobs",
-	}, []string{"service", "env", "queue", "task_type"})
-
-	jobsFailedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "asynq_jobs_failed_total",
-		Help: "Total failed jobs",
-	}, []string{"service", "env", "queue", "task_type"})
-
-	jobsRetriedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "asynq_jobs_retried_total",
-		Help: "Total retried jobs",
-	}, []string{"service", "env", "queue", "task_type"})
-
-	jobDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "asynq_job_duration_seconds",
-		Help:    "Job processing duration",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"service", "env", "queue", "task_type", "result"})
-
-	queueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "asynq_queue_depth",
-		Help: "Queue depth",
-	}, []string{"service", "env", "queue"})
-
-	queueOldestAge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "asynq_queue_oldest_age_seconds",
-		Help: "Oldest job age in queue",
-	}, []string{"service", "env", "queue"})
-
-	deadLetterTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "asynq_dead_letter_total",
-		Help: "Dead lettered jobs",
-	}, []string{"service", "env", "queue", "task_type"})
 )
 
 func main() {
@@ -128,14 +82,12 @@ func main() {
 	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
 	client := asynq.NewClient(redisOpt)
 	defer client.Close()
-	queueDepth.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queueName).Set(0)
-	queueOldestAge.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queueName).Set(0)
-	deadLetterTotal.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queueName, taskTypeDemo).Set(0)
+	workerx.ObserveQueueSnapshot(rt, queueName, taskTypeDemo, 0, 0, 0)
 
 	mux := asynq.NewServeMux()
 	mux.Use(workerx.AsynqMiddleware(rt))
 	mux.HandleFunc(taskTypeDemo, func(taskCtx context.Context, task *asynq.Task) error {
-		return processDemoTask(taskCtx, task, cfg, queueName)
+		return processDemoTask(taskCtx, task)
 	})
 
 	srv := asynq.NewServer(redisOpt, asynq.Config{
@@ -144,8 +96,6 @@ func main() {
 			queueName: 1,
 		},
 		ErrorHandler: asynq.ErrorHandlerFunc(func(taskCtx context.Context, task *asynq.Task, err error) {
-			jobsFailedTotal.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queueName, task.Type()).Inc()
-			jobsRetriedTotal.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queueName, task.Type()).Inc()
 			logJSON(map[string]any{
 				"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 				"level":     "error",
@@ -169,7 +119,7 @@ func main() {
 		}
 	}()
 
-	go startQueueReporter(ctx, redisOpt, cfg.ServiceName, cfg.DeploymentEnv, queueName)
+	go startQueueReporter(ctx, redisOpt, rt, queueName, taskTypeDemo)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -200,7 +150,7 @@ func main() {
 			return
 		}
 
-		jobsEnqueuedTotal.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queueName, taskTypeDemo).Inc()
+		workerx.ObserveEnqueue(rt, queueName, taskTypeDemo)
 		logJSON(map[string]any{
 			"timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
 			"level":            "info",
@@ -240,65 +190,19 @@ func main() {
 	wg.Wait()
 }
 
-func processDemoTask(ctx context.Context, task *asynq.Task, cfg config.Config, queue string) error {
-	started := time.Now()
-	retryCount, ok := asynq.GetRetryCount(ctx)
-	if !ok {
-		retryCount = 0
-	}
-	attempt := retryCount + 1
-	jobID, ok := asynq.GetTaskID(ctx)
-	if !ok || jobID == "" {
-		jobID = uuid.NewString()
-	}
-
+func processDemoTask(ctx context.Context, task *asynq.Task) error {
 	var payload demoPayload
 	_ = json.Unmarshal(task.Payload(), &payload)
 	if payload.TraceID == "" {
 		payload.TraceID = strings.ReplaceAll(uuid.NewString(), "-", "")
 	}
 
-	jobExecutionID := uuid.NewString()
-	jobsStartedTotal.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queue, task.Type()).Inc()
-	logJSON(map[string]any{
-		"timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
-		"level":            "info",
-		"msg":              "job_started",
-		"service":          cfg.ServiceName,
-		"env":              cfg.DeploymentEnv,
-		"job_execution_id": jobExecutionID,
-		"asynq_job_id":     jobID,
-		"task_type":        task.Type(),
-		"queue":            queue,
-		"attempt":          attempt,
-		"tenant_id":        payload.TenantID,
-		"trigger_source":   payload.TriggerSource,
-		"trace_id":         payload.TraceID,
-	})
-
+	_ = ctx
 	time.Sleep(200 * time.Millisecond)
-
-	jobsSucceededTotal.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queue, task.Type()).Inc()
-	jobDuration.WithLabelValues(cfg.ServiceName, cfg.DeploymentEnv, queue, task.Type(), "success").Observe(time.Since(started).Seconds())
-	logJSON(map[string]any{
-		"timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
-		"level":            "info",
-		"msg":              "job_succeeded",
-		"service":          cfg.ServiceName,
-		"env":              cfg.DeploymentEnv,
-		"job_execution_id": jobExecutionID,
-		"asynq_job_id":     jobID,
-		"task_type":        task.Type(),
-		"queue":            queue,
-		"attempt":          attempt,
-		"tenant_id":        payload.TenantID,
-		"trigger_source":   payload.TriggerSource,
-		"trace_id":         payload.TraceID,
-	})
 	return nil
 }
 
-func startQueueReporter(ctx context.Context, redisOpt asynq.RedisClientOpt, service, env, queue string) {
+func startQueueReporter(ctx context.Context, redisOpt asynq.RedisClientOpt, rt *bootstrap.Runtime, queue, taskType string) {
 	inspector := asynq.NewInspector(redisOpt)
 	defer inspector.Close()
 
@@ -315,9 +219,7 @@ func startQueueReporter(ctx context.Context, redisOpt asynq.RedisClientOpt, serv
 				continue
 			}
 
-			queueDepth.WithLabelValues(service, env, queue).Set(float64(info.Size))
-			queueOldestAge.WithLabelValues(service, env, queue).Set(info.Latency.Seconds())
-			deadLetterTotal.WithLabelValues(service, env, queue, taskTypeDemo).Set(float64(info.Archived))
+			workerx.ObserveQueueSnapshot(rt, queue, taskType, info.Size, info.Latency.Seconds(), float64(info.Archived))
 		}
 	}
 }

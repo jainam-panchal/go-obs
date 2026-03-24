@@ -33,7 +33,7 @@ func TestInitAndShutdown(t *testing.T) {
 	}
 }
 
-func TestInitMarksDegradedForUnsupportedProtocol(t *testing.T) {
+func TestInitSupportsHTTPProtobufProtocol(t *testing.T) {
 	cfg := config.Config{
 		ServiceName:          "svc-a",
 		ServiceVersion:       "1.0.0",
@@ -46,11 +46,8 @@ func TestInitMarksDegradedForUnsupportedProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
-	if !rt.TelemetryDegraded {
-		t.Fatal("expected telemetry degraded for unsupported protocol")
-	}
-	if rt.TelemetryError == nil {
-		t.Fatal("expected telemetry degradation error")
+	if rt.TelemetryDegraded {
+		t.Fatalf("expected non-degraded runtime for http/protobuf, got: %v", rt.TelemetryError)
 	}
 }
 

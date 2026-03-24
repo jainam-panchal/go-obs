@@ -55,3 +55,22 @@ func TestRegisterRoutesReadyzFailureAndTimeout(t *testing.T) {
 		t.Fatalf("/readyz timeout status=%d, want 503", w.Code)
 	}
 }
+
+func TestRegisterRoutesLegacyFnTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	RegisterRoutes(r, Check{Name: "legacy-slow", Fn: func() error {
+		time.Sleep(3 * time.Second)
+		return nil
+	}})
+
+	start := time.Now()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("/readyz status=%d, want 503", w.Code)
+	}
+	if elapsed := time.Since(start); elapsed > (defaultReadinessTimeout + 500*time.Millisecond) {
+		t.Fatalf("legacy check did not timeout quickly, elapsed=%s", elapsed)
+	}
+}

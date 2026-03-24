@@ -47,7 +47,9 @@ func TestAsynqMiddlewareStableExecutionIDAndTrace(t *testing.T) {
 
 	h := mw(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error { return nil }))
 	traceID := "1234567890abcdef1234567890abcdef"
-	if err := h.ProcessTask(context.Background(), asynq.NewTask("demo", []byte(`{"trace_id":"`+traceID+`"}`))); err != nil {
+	parentSpanID := "1122334455667788"
+	traceParent := "00-" + traceID + "-" + parentSpanID + "-01"
+	if err := h.ProcessTask(context.Background(), asynq.NewTask("demo", []byte(`{"trace_id":"`+traceID+`","span_id":"`+parentSpanID+`","traceparent":"`+traceParent+`"}`))); err != nil {
 		t.Fatalf("ProcessTask error = %v", err)
 	}
 
@@ -93,5 +95,24 @@ func TestAsynqMiddlewareRetryMetricNotIncrementedWithoutRetryMetadata(t *testing
 	after := testutil.ToFloat64(jobsRetriedTotal.WithLabelValues("svc", "dev", "default", "demo"))
 	if after != before {
 		t.Fatalf("expected retry metric unchanged without retry metadata, before=%v after=%v", before, after)
+	}
+}
+
+func TestObserveQueueMetricsHelpers(t *testing.T) {
+	rt := &bootstrap.Runtime{Config: config.Config{ServiceName: "svc", DeploymentEnv: "dev"}}
+	ObserveEnqueue(rt, "critical", "demo")
+	ObserveQueueSnapshot(rt, "critical", "demo", 7, 12.5, 3)
+
+	if got := testutil.ToFloat64(jobsEnqueuedTotal.WithLabelValues("svc", "dev", "critical", "demo")); got < 1 {
+		t.Fatalf("expected enqueued metric to increase, got=%v", got)
+	}
+	if got := testutil.ToFloat64(queueDepth.WithLabelValues("svc", "dev", "critical")); got != 7 {
+		t.Fatalf("unexpected queue depth, got=%v", got)
+	}
+	if got := testutil.ToFloat64(queueOldestAge.WithLabelValues("svc", "dev", "critical")); got != 12.5 {
+		t.Fatalf("unexpected oldest age, got=%v", got)
+	}
+	if got := testutil.ToFloat64(deadLetterTotal.WithLabelValues("svc", "dev", "critical", "demo")); got != 3 {
+		t.Fatalf("unexpected dead-letter value, got=%v", got)
 	}
 }
