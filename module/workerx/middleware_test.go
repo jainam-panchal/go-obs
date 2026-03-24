@@ -116,3 +116,18 @@ func TestObserveQueueMetricsHelpers(t *testing.T) {
 		t.Fatalf("unexpected dead-letter value, got=%v", got)
 	}
 }
+
+func TestAsynqMiddlewareDoesNotMutateDeadLetterGauge(t *testing.T) {
+	rt := &bootstrap.Runtime{Config: config.Config{ServiceName: "svc", DeploymentEnv: "dev"}}
+	queue := "dlq-semantics"
+	taskType := "demo-fail"
+	ObserveQueueSnapshot(rt, queue, taskType, 1, 1, 3)
+
+	mw := AsynqMiddleware(rt)
+	h := mw(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error { return errors.New("boom") }))
+	_ = h.ProcessTask(context.Background(), asynq.NewTask(taskType, []byte(`{}`)))
+
+	if got := testutil.ToFloat64(deadLetterTotal.WithLabelValues("svc", "dev", queue, taskType)); got != 3 {
+		t.Fatalf("dead-letter gauge should remain snapshot-driven, got=%v", got)
+	}
+}

@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var (
@@ -53,20 +53,12 @@ func Middleware(rt *bootstrap.Runtime) gin.HandlerFunc {
 		}
 		c.Writer.Header().Set("X-Request-Id", requestID)
 
-		traceID := c.GetHeader("X-Trace-Id")
-		if traceID == "" {
-			if sc := trace.SpanContextFromContext(c.Request.Context()); sc.IsValid() {
-				traceID = sc.TraceID().String()
-			} else {
-				traceID = strings.ReplaceAll(uuid.NewString(), "-", "")
-			}
-		}
-
 		spanName := c.FullPath()
 		if spanName == "" {
 			spanName = c.Request.URL.Path
 		}
-		ctx, span := tracer.Start(c.Request.Context(), spanName)
+		extractedCtx := otel.GetTextMapPropagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
+		ctx, span := tracer.Start(extractedCtx, spanName)
 		c.Request = c.Request.WithContext(ctx)
 
 		c.Next()
@@ -86,13 +78,19 @@ func Middleware(rt *bootstrap.Runtime) gin.HandlerFunc {
 		}
 		span.End()
 
+		traceID := ""
 		spanID := ""
-		if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		if sc := span.SpanContext(); sc.IsValid() {
+			traceID = sc.TraceID().String()
 			spanID = sc.SpanID().String()
+		}
+		if traceID == "" {
+			traceID = strings.ReplaceAll(uuid.NewString(), "-", "")
 		}
 		if spanID == "" && len(traceID) >= 16 {
 			spanID = traceID[:16]
 		}
+		c.Writer.Header().Set("X-Trace-Id", traceID)
 
 		logJSON(map[string]any{
 			"timestamp":   time.Now().UTC().Format(time.RFC3339Nano),

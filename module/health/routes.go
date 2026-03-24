@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -10,6 +11,8 @@ import (
 )
 
 const defaultReadinessTimeout = 2 * time.Second
+
+var errLegacyCheckRunning = errors.New("legacy readiness check still running; migrate to FnCtx for cancellation")
 
 // Check represents a readiness dependency probe.
 type Check struct {
@@ -72,16 +75,28 @@ type legacyCheckRunner struct {
 
 func (r *legacyCheckRunner) Run(timeout time.Duration) error {
 	r.mu.Lock()
-	if !r.running {
-		r.running = true
-		r.done = make(chan error, 1)
+	if r.running {
 		done := r.done
-		go func() {
-			done <- r.fn()
-		}()
+		r.mu.Unlock()
+		select {
+		case err := <-done:
+			r.mu.Lock()
+			r.running = false
+			r.done = nil
+			r.mu.Unlock()
+			return err
+		default:
+			return errLegacyCheckRunning
+		}
 	}
+	r.running = true
+	r.done = make(chan error, 1)
 	done := r.done
 	r.mu.Unlock()
+
+	go func() {
+		done <- r.fn()
+	}()
 
 	select {
 	case err := <-done:

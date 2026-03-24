@@ -74,3 +74,28 @@ func TestRegisterRoutesLegacyFnTimeout(t *testing.T) {
 		t.Fatalf("legacy check did not timeout quickly, elapsed=%s", elapsed)
 	}
 }
+
+func TestRegisterRoutesLegacyFnReturnsRunningError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	r := gin.New()
+	RegisterRoutes(r, Check{Name: "legacy-blocked", Fn: func() error {
+		close(started)
+		<-release
+		return nil
+	}})
+
+	w1 := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	go r.ServeHTTP(w1, req)
+	<-started
+
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w2.Code != http.StatusServiceUnavailable {
+		t.Fatalf("second /readyz status=%d, want 503", w2.Code)
+	}
+
+	close(release)
+}

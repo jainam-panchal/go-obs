@@ -101,8 +101,6 @@ func AsynqMiddleware(rt *bootstrap.Runtime) asynq.MiddlewareFunc {
 				jobsFailedTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
 				if hasMaxRetry && retryCount < maxRetry && !errors.Is(err, asynq.SkipRetry) {
 					jobsRetriedTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
-				} else {
-					deadLetterTotal.WithLabelValues(service, env, queue, task.Type()).Inc()
 				}
 				span.SetStatus(codes.Error, err.Error())
 				logJSON(map[string]any{
@@ -157,7 +155,7 @@ func ObserveEnqueue(rt *bootstrap.Runtime, queue, taskType string) {
 	jobsEnqueuedTotal.WithLabelValues(service, env, queue, taskType).Inc()
 }
 
-// ObserveQueueSnapshot records queue depth/age/dead-letter metrics from queue inspectors.
+// ObserveQueueSnapshot records queue depth/age/dead-letter snapshot metrics from queue inspectors.
 func ObserveQueueSnapshot(rt *bootstrap.Runtime, queue, taskType string, depth int, oldestAgeSeconds, deadLetter float64) {
 	initWorkerMetrics()
 	service, env := serviceEnv(rt)
