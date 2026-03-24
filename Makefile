@@ -1,16 +1,16 @@
 .PHONY: up down test lint smoke
 
 up:
-	@echo "[D0] Stack startup is not wired yet. Planned in D2 (platform baseline)."
+	@docker compose -p go-obs-platform -f platform/docker-compose.yml up -d --remove-orphans
 
 down:
-	@echo "[D0] Stack shutdown is not wired yet. Planned in D2 (platform baseline)."
+	@docker compose -p go-obs-platform -f platform/docker-compose.yml down --remove-orphans
 
 test:
 	@cd module && go test -race ./...
 
 lint:
-	@echo "[D0] Lint checks are not wired yet. Planned in D5 (CI/CD enforcement)."
+	@./scripts/validate-platform.sh
 
 smoke:
 	@echo "[D0] Smoke tests are not wired yet. Planned in D4 (example integration)."

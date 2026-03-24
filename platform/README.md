@@ -2,4 +2,9 @@
 
 Central observability platform configs (LGTM + OTEL Collector).
 
-D2 will add local stack and baseline collector pipeline.
+## Local stack
+- Compose file: `platform/docker-compose.yml`
+- Bring up: `make up`
+- Bring down: `make down`
+- Validate config: `./scripts/validate-platform.sh`
+- Health check: `./scripts/platform-health.sh`
