@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/peralta/go-observability-kit/config"
+	"github.com/jainam-panchal/go-obs/module/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"

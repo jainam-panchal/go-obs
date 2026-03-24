@@ -1,4 +1,4 @@
-module github.com/peralta/go-observability-kit
+module github.com/jainam-panchal/go-obs/module
 
 go 1.25.0
 

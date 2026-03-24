@@ -3,8 +3,8 @@ package dbx
 import (
 	"testing"
 
-	"github.com/peralta/go-observability-kit/bootstrap"
-	"github.com/peralta/go-observability-kit/config"
+	"github.com/jainam-panchal/go-obs/module/bootstrap"
+	"github.com/jainam-panchal/go-obs/module/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

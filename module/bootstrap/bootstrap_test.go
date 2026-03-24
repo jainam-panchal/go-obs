@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/peralta/go-observability-kit/config"
+	"github.com/jainam-panchal/go-obs/module/config"
 )
 
 func TestInitValidatesConfig(t *testing.T) {

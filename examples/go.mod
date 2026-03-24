@@ -1,4 +1,4 @@
-module github.com/peralta/go-obs/examples
+module github.com/jainam-panchal/go-obs/examples
 
 go 1.25.0
 
@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.25.1
-	github.com/peralta/go-observability-kit v0.0.0
+	github.com/jainam-panchal/go-obs/module v0.0.0
 	github.com/prometheus/client_golang v1.20.5
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.30.0
@@ -72,4 +72,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/peralta/go-observability-kit => ../module
+replace github.com/jainam-panchal/go-obs/module => ../module

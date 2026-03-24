@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/hibiken/asynq"
-	"github.com/peralta/go-observability-kit/bootstrap"
-	"github.com/peralta/go-observability-kit/config"
+	"github.com/jainam-panchal/go-obs/module/bootstrap"
+	"github.com/jainam-panchal/go-obs/module/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"go.opentelemetry.io/otel/trace"

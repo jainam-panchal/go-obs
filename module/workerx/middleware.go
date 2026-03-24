@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/peralta/go-observability-kit/bootstrap"
+	"github.com/jainam-panchal/go-obs/module/bootstrap"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"

@@ -6,12 +6,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
-	"github.com/peralta/go-observability-kit/bootstrap"
-	"github.com/peralta/go-observability-kit/dbx"
-	"github.com/peralta/go-observability-kit/ginx"
-	"github.com/peralta/go-observability-kit/health"
-	"github.com/peralta/go-observability-kit/metrics"
-	"github.com/peralta/go-observability-kit/workerx"
+	"github.com/jainam-panchal/go-obs/module/bootstrap"
+	"github.com/jainam-panchal/go-obs/module/dbx"
+	"github.com/jainam-panchal/go-obs/module/ginx"
+	"github.com/jainam-panchal/go-obs/module/health"
+	"github.com/jainam-panchal/go-obs/module/metrics"
+	"github.com/jainam-panchal/go-obs/module/workerx"
 	"gorm.io/gorm"
 )
 
