@@ -23,10 +23,13 @@ import (
 
 	"github.com/peralta/go-observability-kit/bootstrap"
 	"github.com/peralta/go-observability-kit/config"
+	"github.com/peralta/go-observability-kit/dbx"
 	"github.com/peralta/go-observability-kit/ginx"
 	"github.com/peralta/go-observability-kit/health"
 	"github.com/peralta/go-observability-kit/metrics"
 	"github.com/peralta/go-observability-kit/workerx"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 const (
@@ -38,6 +41,12 @@ type demoPayload struct {
 	TenantID      string `json:"tenant_id,omitempty"`
 	TraceID       string `json:"trace_id"`
 	QueuedAt      string `json:"queued_at"`
+}
+
+type demoRow struct {
+	ID        uint      `gorm:"primaryKey"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+	Name      string    `gorm:"size:64;not null"`
 }
 
 var (
@@ -78,6 +87,16 @@ func main() {
 	redisAddr := getenv("REDIS_ADDR", "127.0.0.1:16379")
 	queueName := getenv("ASYNQ_QUEUE", "default")
 	httpAddr := getenv("HTTP_ADDR", ":18080")
+	dbPath := getenv("DEMO_SQLITE_PATH", "file:demo-observability.db?cache=shared&_busy_timeout=5000")
+
+	gdb, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("open sqlite: %v", err)
+	}
+	gdb = dbx.WrapGORM(gdb, rt)
+	if err := gdb.AutoMigrate(&demoRow{}); err != nil {
+		log.Fatalf("migrate sqlite: %v", err)
+	}
 
 	redisOpt := asynq.RedisClientOpt{Addr: redisAddr}
 	client := asynq.NewClient(redisOpt)
@@ -168,6 +187,20 @@ func main() {
 		})
 
 		c.JSON(http.StatusAccepted, gin.H{"id": info.ID, "trace_id": payload.TraceID})
+	})
+
+	r.GET("/db/ping", func(c *gin.Context) {
+		row := demoRow{Name: "ping"}
+		if err := gdb.WithContext(c.Request.Context()).Create(&row).Error; err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "db_error", "error": err.Error()})
+			return
+		}
+		var count int64
+		if err := gdb.WithContext(c.Request.Context()).Model(&demoRow{}).Count(&count).Error; err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "db_error", "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "rows": count})
 	})
 
 	httpSrv := &http.Server{Addr: httpAddr, Handler: r}
