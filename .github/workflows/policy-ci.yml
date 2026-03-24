@@ -24,6 +24,13 @@ jobs:
         run: |
           ./scripts/check-docs-first.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
 
+  readiness-fn-deprecation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Readiness Fn deprecation policy
+        run: ./scripts/check-readiness-fn-deprecation.sh
+
   split-ready-boundaries:
     runs-on: ubuntu-latest
     steps:
