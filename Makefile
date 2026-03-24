@@ -14,6 +14,7 @@ lint:
 	@./scripts/validate-platform.sh
 	@./scripts/validate-alerts.sh
 	@./scripts/validate-dashboards.sh
+	@./scripts/check-readiness-fn-deprecation.sh
 
 smoke:
 	@./scripts/smoke-example.sh

@@ -4,6 +4,16 @@ on:
   pull_request:
 
 jobs:
+  race-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Race tests gate
+        run: ./scripts/test-race.sh
+
   docs-first:
     runs-on: ubuntu-latest
     steps:

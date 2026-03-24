@@ -1,0 +1,58 @@
+rule_files:
+  - ../prometheus/baseline.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: dead-letter-growth-fires-on-net-gauge-increase
+    interval: 1m
+    input_series:
+      - series: 'asynq_dead_letter_total{service="svc-a",env="dev",queue="q1",task_type="demo"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40'
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: DeadLetterGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              service: svc-a
+              env: dev
+              queue: q1
+              task_type: demo
+            exp_annotations:
+              summary: Dead-letter growth detected
+              description: Dead-letter entries increased over 30 minutes.
+              runbook_url: https://runbooks.local/dead-letter-growth
+              dashboard_url: https://grafana.local/d/queue-overview
+
+  - name: dead-letter-growth-does-not-fire-on-gauge-reset
+    interval: 1m
+    input_series:
+      - series: 'asynq_dead_letter_total{service="svc-b",env="dev",queue="q2",task_type="demo"}'
+        values: '5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: DeadLetterGrowth
+        exp_alerts: []
+
+  - name: retry-storm-fires-on-sustained-counter-rate
+    interval: 1m
+    input_series:
+      - series: 'asynq_jobs_retried_total{service="svc-c",env="prod",queue="critical"}'
+        values: '0 600 1200 1800 2400 3000 3600 4200 4800 5400 6000 6600 7200 7800 8400 9000 9600 10200 10800 11400 12000'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RetryStorm
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              service: svc-c
+              env: prod
+              queue: critical
+            exp_annotations:
+              summary: Retry storm for queue critical
+              description: Retry rate exceeded threshold for 10 minutes.
+              runbook_url: https://runbooks.local/retry-storm
+              dashboard_url: https://grafana.local/d/queue-overview

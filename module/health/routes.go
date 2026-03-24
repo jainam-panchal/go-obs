@@ -12,8 +12,9 @@ import (
 
 const defaultReadinessTimeout = 2 * time.Second
 const legacyCheckStaleWindow = 30 * time.Second
+const LegacyFnRemovalDate = "2026-06-30"
 
-var errLegacyCheckRunning = errors.New("legacy readiness check still running; migrate to FnCtx for cancellation")
+var errLegacyCheckRunning = errors.New("legacy readiness check still running; migrate to FnCtx before 2026-06-30")
 
 // Check represents a readiness dependency probe.
 type Check struct {

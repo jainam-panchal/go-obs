@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,82 +58,86 @@ func TestRegisterRoutesReadyzFailureAndTimeout(t *testing.T) {
 	}
 }
 
-func TestRegisterRoutesLegacyFnTimeout(t *testing.T) {
+func TestRegisterRoutesParallelProbesSlowFnCtx(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	RegisterRoutes(r, Check{Name: "legacy-slow", Fn: func() error {
-		time.Sleep(3 * time.Second)
-		return nil
-	}})
 
-	start := time.Now()
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("/readyz status=%d, want 503", w.Code)
+	var inFlight atomic.Int64
+	var maxInFlight atomic.Int64
+
+	RegisterRoutes(r, Check{
+		Name: "slow",
+		FnCtx: func(ctx context.Context) error {
+			cur := inFlight.Add(1)
+			for {
+				prev := maxInFlight.Load()
+				if cur <= prev || maxInFlight.CompareAndSwap(prev, cur) {
+					break
+				}
+			}
+			defer inFlight.Add(-1)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(150 * time.Millisecond):
+				return nil
+			}
+		},
+	})
+
+	var wg sync.WaitGroup
+	errCh := make(chan int, 40)
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			errCh <- w.Code
+		}()
 	}
-	if elapsed := time.Since(start); elapsed > (defaultReadinessTimeout + 500*time.Millisecond) {
-		t.Fatalf("legacy check did not timeout quickly, elapsed=%s", elapsed)
-	}
-}
+	wg.Wait()
+	close(errCh)
 
-func TestRegisterRoutesLegacyFnReturnsRunningError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	r := gin.New()
-	RegisterRoutes(r, Check{Name: "legacy-blocked", Fn: func() error {
-		close(started)
-		<-release
-		return nil
-	}})
-
-	w1 := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	go r.ServeHTTP(w1, req)
-	<-started
-
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if w2.Code != http.StatusServiceUnavailable {
-		t.Fatalf("second /readyz status=%d, want 503", w2.Code)
-	}
-
-	close(release)
-}
-
-func TestRegisterRoutesLegacyFnUsesRecentLastResultWhileRunning(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	blockNext := false
-
-	r := gin.New()
-	RegisterRoutes(r, Check{Name: "legacy-cached", Fn: func() error {
-		if blockNext {
-			close(started)
-			<-release
+	for code := range errCh {
+		if code != http.StatusOK {
+			t.Fatalf("unexpected status from parallel probe: %d", code)
 		}
-		return nil
-	}})
-
-	// Seed a successful last result.
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("seed /readyz status=%d, want 200", w.Code)
 	}
-
-	blockNext = true
-	w1 := httptest.NewRecorder()
-	go r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	<-started
-
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if w2.Code != http.StatusOK {
-		t.Fatalf("concurrent /readyz status=%d, want 200", w2.Code)
+	if maxInFlight.Load() < 2 {
+		t.Fatalf("expected concurrent readiness probes, max_inflight=%d", maxInFlight.Load())
 	}
+}
 
-	close(release)
+func TestRegisterRoutesParallelProbesOneSlowOneFastDependency(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	RegisterRoutes(
+		r,
+		Check{Name: "fast", FnCtx: func(ctx context.Context) error { return nil }},
+		Check{Name: "slow", FnCtx: func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+				return nil
+			}
+		}},
+	)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if w.Code != http.StatusOK {
+				t.Errorf("status=%d", w.Code)
+			}
+		}()
+	}
+	wg.Wait()
 }

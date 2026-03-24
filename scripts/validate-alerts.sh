@@ -18,4 +18,6 @@ for ann in summary description runbook_url dashboard_url; do
   fi
 done
 
+./scripts/test-alert-rules.sh
+
 echo "alerts validation passed"

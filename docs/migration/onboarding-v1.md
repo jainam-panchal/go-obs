@@ -14,7 +14,8 @@ Integrate a Go/Gin service with the observability contract in <= 1 working day.
 1. Initialize runtime with `bootstrap.Init` at service startup.
 2. Add `ginx.Middleware(rt)` to Gin middleware chain.
 3. Register:
-   - `health.RegisterRoutes(router)` for `/healthz` and `/readyz`
+   - `health.RegisterRoutes(router, checks...)` for `/healthz` and `/readyz`
+   - readiness checks must use `health.Check{Name: ..., FnCtx: func(context.Context) error { ... }}`
    - `metrics.RegisterRoute(router)` for `/metrics`
 4. For workers, add `workerx.AsynqMiddleware(rt)`.
 5. For GORM usage, wrap DB with `dbx.WrapGORM(db, rt, ...)`.
@@ -24,6 +25,11 @@ Integrate a Go/Gin service with the observability contract in <= 1 working day.
 2. `make lint`
 3. Generate one request and verify `/healthz`, `/readyz`, `/metrics`.
 4. Run `make smoke` for end-to-end baseline validation.
+
+## Readiness Deprecation Deadline
+1. Legacy readiness checks using `Check{Fn: ...}` are deprecated.
+2. Migration deadline is **2026-06-30**.
+3. After the deadline, CI enforces the policy via `scripts/check-readiness-fn-deprecation.sh`.
 
 ## Rollout Guidance
 1. Start with one pilot service.

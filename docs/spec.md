@@ -56,6 +56,11 @@ Rule: keep API stable and implementation adapter-based.
 3. `GET /metrics` (prometheus scrape)
 4. `GET /debug/pprof/*` (optional, restricted)
 
+### 3.4 Readiness Check Standard
+1. Readiness checks must implement context-aware signature `FnCtx func(context.Context) error`.
+2. Legacy `Fn func() error` compatibility is temporary and scheduled for removal on **2026-06-30**.
+3. After the deprecation date, repository policy checks fail CI when new `Check{Fn: ...}` usage exists outside compatibility internals.
+
 ## 4. Platform Architecture (`obs-platform`)
 
 ### 4.1 Topology

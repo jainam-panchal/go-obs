@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -155,6 +156,16 @@ func ObserveEnqueue(rt *bootstrap.Runtime, queue, taskType string) {
 	jobsEnqueuedTotal.WithLabelValues(service, env, queue, taskType).Inc()
 }
 
+// ObserveRetried records a retry event for contract metrics in external retry paths.
+func ObserveRetried(rt *bootstrap.Runtime, queue, taskType string) {
+	initWorkerMetrics()
+	service, env := serviceEnv(rt)
+	if queue == "" {
+		queue = "default"
+	}
+	jobsRetriedTotal.WithLabelValues(service, env, queue, taskType).Inc()
+}
+
 // ObserveQueueSnapshot records queue depth/age/dead-letter snapshot metrics from queue inspectors.
 func ObserveQueueSnapshot(rt *bootstrap.Runtime, queue, taskType string, depth int, oldestAgeSeconds, deadLetter float64) {
 	initWorkerMetrics()
@@ -224,10 +235,18 @@ func parseTraceParent(tp string) (trace.SpanContext, error) {
 	if err != nil {
 		return trace.SpanContext{}, err
 	}
+	if len(parts[3]) != 2 {
+		return trace.SpanContext{}, fmt.Errorf("invalid traceparent flags: %s", parts[3])
+	}
+	flagByte, err := strconv.ParseUint(parts[3], 16, 8)
+	if err != nil {
+		return trace.SpanContext{}, fmt.Errorf("parse traceparent flags: %w", err)
+	}
 	flags := trace.TraceFlags(0)
-	if len(parts[3]) == 2 && strings.EqualFold(parts[3], "01") {
+	if flagByte&0x01 == 0x01 {
 		flags = trace.FlagsSampled
 	}
+
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    tid,
 		SpanID:     sid,

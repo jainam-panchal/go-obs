@@ -42,12 +42,14 @@ This runbook covers response steps for baseline observability alerts defined in 
 2. Identify failing task type and root-cause exception.
 3. Stop bad producers or disable problematic task path.
 4. Apply fix and monitor retry decay.
+5. Alert semantics: counter rate (`rate(asynq_jobs_retried_total[5m])`) sustained for the `for` window.
 
 ### DeadLetterGrowth
 1. Check dead-letter growth trend and affected task types.
 2. Review failure signatures in worker logs.
 3. Execute controlled replay after root cause is fixed.
 4. Record replay actions in incident notes.
+5. Alert semantics: gauge net-growth (`delta(asynq_dead_letter_total[30m]) > 0`) sustained for the `for` window.
 
 ### DBDependencyFailure
 1. Inspect DB error-rate metrics and slow query signals.

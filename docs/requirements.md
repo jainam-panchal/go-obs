@@ -31,6 +31,7 @@
 7. Emit DB query count/latency/error metrics.
 8. Add request and trace correlation fields to logs.
 9. Propagate trace context across HTTP and async boundaries.
+10. Readiness checks must use context-aware `FnCtx` probes; legacy `Fn` usage is deprecated and removed after 2026-06-30.
 
 ### 2.2 Platform Functional Requirements
 1. OTEL Collector must receive OTLP traffic from services.
@@ -100,6 +101,8 @@
 3. `make smoke` must pass (example endpoint + job lifecycle telemetry checks).
 4. `scripts/check-boundaries.sh` must pass (split-ready boundary policy).
 5. `scripts/check-docs-first.sh` must pass in CI for PR policy.
+6. `scripts/test-race.sh` must pass in CI as race-test gate.
+7. `scripts/check-readiness-fn-deprecation.sh` must pass (enforced after 2026-06-30).
 
 ## 6. Acceptance Criteria
 1. Logs, traces, and metrics are correlatable with `trace_id` and `request_id`.
