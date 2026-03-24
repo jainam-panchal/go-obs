@@ -7,12 +7,11 @@ groups:
         labels:
           severity: warning
           team: platform
-          summary: HTTP 5xx rate spike detected
+        annotations:
+          summary: HTTP 5xx spike on {{ $labels.service }} ({{ $labels.env }})
           description: HTTP 5xx rate is above threshold for 5 minutes.
           runbook_url: https://runbooks.local/http-5xx-rate-spike
           dashboard_url: https://grafana.local/d/http-overview
-        annotations:
-          summary: HTTP 5xx spike on {{ $labels.service }} ({{ $labels.env }})
 
       - alert: HTTPP95LatencyBreach
         expr: histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le, service, env)) > 0.5
@@ -20,25 +19,23 @@ groups:
         labels:
           severity: warning
           team: platform
-          summary: HTTP p95 latency breached
+        annotations:
+          summary: HTTP p95 latency breach on {{ $labels.service }} ({{ $labels.env }})
           description: p95 latency is above 500ms for 10 minutes.
           runbook_url: https://runbooks.local/http-p95-latency
           dashboard_url: https://grafana.local/d/http-overview
-        annotations:
-          summary: HTTP p95 latency breach on {{ $labels.service }} ({{ $labels.env }})
 
       - alert: ServiceNotReady
-        expr: min_over_time(up{job="service-readiness"}[5m]) == 0
+        expr: min_over_time(up{job=~"otel-collector|prometheus"}[5m]) == 0
         for: 5m
         labels:
           severity: critical
           team: platform
-          summary: Service readiness failed
-          description: Readiness check is failing continuously.
+        annotations:
+          summary: Platform component not ready in {{ $labels.job }}
+          description: Required platform scrape target is down for 5 minutes.
           runbook_url: https://runbooks.local/service-not-ready
           dashboard_url: https://grafana.local/d/service-readiness
-        annotations:
-          summary: Service not ready in {{ $labels.env }}
 
       - alert: QueueOldestAgeBreach
         expr: max(asynq_queue_oldest_age_seconds) by (service, env, queue) > 300
@@ -46,12 +43,11 @@ groups:
         labels:
           severity: warning
           team: platform
-          summary: Queue oldest age breached
+        annotations:
+          summary: Queue oldest age breach for {{ $labels.queue }}
           description: Queue oldest job age is above 5 minutes.
           runbook_url: https://runbooks.local/queue-oldest-age
           dashboard_url: https://grafana.local/d/queue-overview
-        annotations:
-          summary: Queue oldest age breach for {{ $labels.queue }}
 
       - alert: RetryStorm
         expr: sum(rate(asynq_jobs_retried_total[5m])) by (service, env, queue) > 5
@@ -59,12 +55,11 @@ groups:
         labels:
           severity: critical
           team: platform
-          summary: Retry storm detected
+        annotations:
+          summary: Retry storm for queue {{ $labels.queue }}
           description: Retry rate exceeded threshold for 10 minutes.
           runbook_url: https://runbooks.local/retry-storm
           dashboard_url: https://grafana.local/d/queue-overview
-        annotations:
-          summary: Retry storm for queue {{ $labels.queue }}
 
       - alert: DeadLetterGrowth
         expr: increase(asynq_dead_letter_total[30m]) > 0
@@ -72,12 +67,11 @@ groups:
         labels:
           severity: critical
           team: platform
-          summary: Dead-letter queue growth detected
+        annotations:
+          summary: Dead-letter growth detected
           description: Dead-letter entries increased over 30 minutes.
           runbook_url: https://runbooks.local/dead-letter-growth
           dashboard_url: https://grafana.local/d/queue-overview
-        annotations:
-          summary: Dead-letter growth detected
 
       - alert: DBDependencyFailure
         expr: sum(rate(db_client_queries_total{result="error"}[5m])) by (service, env) > 1
@@ -85,9 +79,8 @@ groups:
         labels:
           severity: critical
           team: platform
-          summary: Database dependency failure
+        annotations:
+          summary: DB dependency failure for {{ $labels.service }}
           description: Database error rate exceeded threshold.
           runbook_url: https://runbooks.local/db-dependency-failure
           dashboard_url: https://grafana.local/d/db-overview
-        annotations:
-          summary: DB dependency failure for {{ $labels.service }}

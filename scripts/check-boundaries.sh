@@ -13,9 +13,16 @@ if (cd module && go list -deps ./... | grep -E '(^|/)platform($|/)') >/dev/null 
 fi
 
 # Split-ready rule: no direct platform path references from module source.
-if rg -n '(^|[^[:alnum:]_])platform/' module --glob '*.go' >/dev/null 2>&1; then
-  echo "boundary check failed: module source references platform path"
-  exit 1
+if command -v rg >/dev/null 2>&1; then
+  if rg -n '(^|[^[:alnum:]_])platform/' module --glob '*.go' >/dev/null 2>&1; then
+    echo "boundary check failed: module source references platform path"
+    exit 1
+  fi
+else
+  if grep -RInE '(^|[^[:alnum:]_])platform/' module --include='*.go' >/dev/null 2>&1; then
+    echo "boundary check failed: module source references platform path"
+    exit 1
+  fi
 fi
 
 echo "boundary check passed"

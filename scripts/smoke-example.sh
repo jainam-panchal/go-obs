@@ -28,6 +28,7 @@ export REDIS_ADDR="127.0.0.1:16379"
 export HTTP_ADDR=":18080"
 
 : > "$LOG_FILE"
+go mod tidy >/dev/null 2>&1
 go run . > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 cd ..
@@ -39,7 +40,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-curl -fsS "http://127.0.0.1:18080/healthz" >/dev/null
+curl -fsS "http://127.0.0.1:18080/healthz" >/dev/null || { echo "example service failed to start"; sed -n '1,120p' "$LOG_FILE"; exit 1; }
 curl -fsS "http://127.0.0.1:18080/readyz" >/dev/null
 curl -fsS -X POST "http://127.0.0.1:18080/jobs/demo?tenant_id=t1" -H "X-Request-Id: smoke-1" -H "X-Trace-Id: trace-smoke-001" >/dev/null
 sleep 4
