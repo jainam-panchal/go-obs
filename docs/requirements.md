@@ -94,6 +94,13 @@
 3. Forbidden high-cardinality labels absent.
 4. Mandatory alerts exist with runbook links.
 
+### 5.4 Repository Execution Gates (current baseline)
+1. `make test` must pass (module race tests).
+2. `make lint` must pass (platform/alerts/dashboards validations).
+3. `make smoke` must pass (example endpoint + job lifecycle telemetry checks).
+4. `scripts/check-boundaries.sh` must pass (split-ready boundary policy).
+5. `scripts/check-docs-first.sh` must pass in CI for PR policy.
+
 ## 6. Acceptance Criteria
 1. Logs, traces, and metrics are correlatable with `trace_id` and `request_id`.
 2. Baseline dashboards work with only `service` + `env` filters.
@@ -115,3 +122,10 @@ The following documents are mandatory and must stay current:
 4. `docs/runbooks/*.md`
 5. `docs/releases/*.md`
 6. `docs/migration/*.md`
+
+## 9. CI Enforcement Baseline (2026-03-24)
+CI workflows must enforce the following:
+1. Module CI: `module-ci.yml` runs `go test -race ./...` under `module/`.
+2. Platform CI: `platform-ci.yml` runs `make lint`.
+3. Policy CI: `policy-ci.yml` runs docs-first and split-ready boundary checks.
+4. Example CI: `examples-smoke.yml` runs `make smoke`.

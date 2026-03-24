@@ -167,3 +167,23 @@ Architecture is accepted when:
 2. Job lifecycle is queryable end-to-end.
 3. Baseline alerts and runbook links are active.
 4. New service onboarding follows the contract without custom exceptions.
+
+## 11. Baseline Implementation Snapshot (2026-03-24)
+The following baseline is implemented in this repository:
+
+1. Module API skeleton in `module/` with required public interfaces and env contract parser.
+2. Platform baseline in `platform/`:
+   1. OTEL Collector, Prometheus, Loki, Tempo, Grafana, Alertmanager, Redis.
+   2. Collector pipeline with `otlp` receiver; `memory_limiter`, `batch`, `resource`, `attributes` processors; exporters to Prometheus/Loki/Tempo.
+3. Alerts as code in `alerts/prometheus/baseline.rules.yml`.
+4. Dashboards and provisioning as code in `dashboards/provisioning/` and `dashboards/json/`.
+5. Example integration in `examples/`:
+   1. Gin endpoints `/healthz`, `/readyz`, `/metrics`
+   2. Asynq job route `POST /jobs/demo`
+   3. Job lifecycle logs/metrics baseline.
+6. Validation scripts in `scripts/`:
+   1. `validate-platform.sh`
+   2. `validate-alerts.sh`
+   3. `validate-dashboards.sh`
+   4. `platform-health.sh`
+   5. `smoke-example.sh`
