@@ -114,6 +114,12 @@ Required families:
 2. Worker job starts/continues trace across async boundary
 3. DB and outbound dependencies as child spans
 4. Errors captured as span status + exception events
+5. DB spans must use client span kind and carry query metadata needed for Tempo inspection:
+   1. `db.system`
+   2. `db.operation`
+   3. `db.statement` when parameterized SQL text is available
+   4. `db.sql.table` when known
+   5. `db.rows_affected` after execution
 
 ## 6. Job Observability Architecture
 

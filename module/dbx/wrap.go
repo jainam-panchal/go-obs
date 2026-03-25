@@ -2,12 +2,15 @@ package dbx
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jainam-panchal/go-obs/module/bootstrap"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
@@ -54,7 +57,7 @@ func WrapGORM(db *gorm.DB, rt *bootstrap.Runtime, _ ...Option) *gorm.DB {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			ctx, span := otel.Tracer("go-observability-kit/dbx").Start(ctx, "db."+name)
+			ctx, span := otel.Tracer("go-observability-kit/dbx").Start(ctx, "db."+name, trace.WithSpanKind(trace.SpanKindClient))
 			tx.Statement.Context = ctx
 			tx.InstanceSet(spanKey, span)
 		}
@@ -74,7 +77,33 @@ func WrapGORM(db *gorm.DB, rt *bootstrap.Runtime, _ ...Option) *gorm.DB {
 			}
 			if v, ok := tx.InstanceGet(spanKey); ok {
 				if span, ok := v.(trace.Span); ok {
+					dialect := ""
+					if tx.Dialector != nil {
+						dialect = strings.TrimSpace(tx.Dialector.Name())
+					}
+					statement, operation := statementMetadata(tx, name)
+					attrs := make([]attribute.KeyValue, 0, 5)
+					if dialect != "" {
+						attrs = append(attrs, attribute.String("db.system", dialect))
+					}
+					if operation != "" {
+						attrs = append(attrs, attribute.String("db.operation", operation))
+						span.SetName(fmt.Sprintf("db.%s", strings.ToLower(operation)))
+					}
+					table := ""
+					if tx.Statement != nil {
+						table = strings.TrimSpace(tx.Statement.Table)
+					}
+					if table != "" {
+						attrs = append(attrs, attribute.String("db.sql.table", table))
+					}
+					if statement != "" {
+						attrs = append(attrs, attribute.String("db.statement", statement))
+					}
+					attrs = append(attrs, attribute.Int64("db.rows_affected", tx.RowsAffected))
+					span.SetAttributes(attrs...)
 					if tx.Error != nil {
+						span.RecordError(tx.Error)
 						span.SetStatus(codes.Error, tx.Error.Error())
 					}
 					span.End()
@@ -125,4 +154,20 @@ func mustRegisterHistogramVec(name, help string, labels []string) *prometheus.Hi
 		}
 	}
 	return hv
+}
+
+func statementMetadata(tx *gorm.DB, fallback string) (statement string, operation string) {
+	if tx == nil || tx.Statement == nil {
+		return "", strings.ToUpper(strings.TrimSpace(fallback))
+	}
+
+	statement = strings.TrimSpace(tx.Statement.SQL.String())
+	if statement != "" {
+		fields := strings.Fields(statement)
+		if len(fields) > 0 {
+			return statement, strings.ToUpper(fields[0])
+		}
+	}
+
+	return "", strings.ToUpper(strings.TrimSpace(fallback))
 }

@@ -67,6 +67,12 @@ db, err := gorm.Open(...)
 if err != nil { /* handle */ }
 
 db = dbx.WrapGORM(db, rt)
+
+// Mandatory for trace parenting:
+// use the active request/job context on every DB operation.
+if err := db.WithContext(ctx).Find(&rows).Error; err != nil {
+  // handle
+}
 ```
 
 ## 5. Optional Queue Snapshot Hooks
@@ -105,3 +111,4 @@ make lint
 2. Registering raw dynamic URL path labels instead of route templates.
 3. Sending payload-only IDs as metric labels (high cardinality).
 4. Omitting queue snapshot instrumentation while alerting on queue metrics.
+5. Executing GORM calls without `WithContext(...)`, which causes DB spans to detach from the active HTTP or worker trace.

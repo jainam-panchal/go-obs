@@ -32,6 +32,7 @@
 8. Add request and trace correlation fields to logs.
 9. Propagate trace context across HTTP and async boundaries.
 10. Readiness checks must use context-aware `FnCtx` probes; legacy `Fn` usage is deprecated and removed after 2026-06-30.
+11. GORM query spans must be emitted as client dependency spans with DB metadata sufficient to inspect query timing in Tempo.
 
 ### 2.2 Platform Functional Requirements
 1. OTEL Collector must receive OTLP traffic from services.
